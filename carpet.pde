@@ -13,6 +13,8 @@ int tile_rows = 12;
 boolean need_update = true;
 boolean mouse_processed = false;
 boolean shift_pressed = false;
+boolean do_save = false;
+int favourite;
 PFont font;
 char last_key = ' ';
 boolean show_tiles = false;
@@ -97,6 +99,7 @@ class Config {
   int rotation_glitch;
   int pattern_offset_ratio;
   ArrayList<Modification> mods;
+  int MAX_FAVOURITES = 10;
 
   Config() {
     initial();
@@ -129,6 +132,58 @@ class Config {
     pattern_offset_ratio = 2;
   }
 
+  void favourite(int preset)
+  {
+    // Blank canvas.
+    basic();
+
+    // tiles
+    // - 012 - formwork
+    // - 345 - scaffold
+    // - skip transvere since mortar doesn't have same shadows
+    // pattern
+    // - brick/ashlar make random look less jarring
+    // tile strategy
+    // - RANDOM almost always is favourite
+    // - SEQUENTIAL_ROW/SEQUENTIAL_COL only look good with a single 
+    //   tile with ALTERNATING_90 or ROTATING_90 (maybe RANDOM or RANDOM_90)
+    // - SEQUENTIAL_ROW_COL 
+    //   - MONOLITHIC && tile_enabled.length == 1
+
+    // Switch between tilesets.
+    if (preset % 2 == 1) {
+      toggle_tile(0);
+      toggle_tile(1);
+      toggle_tile(2);
+      toggle_tile(3);
+      toggle_tile(4);
+      toggle_tile(5);
+    }
+    preset /= 2;
+
+    switch (preset) {
+      case 0:
+	tile_strategy = Tile_strategy.RANDOM;
+	break;
+      case 1:
+	tile_strategy = Tile_strategy.RANDOM;
+	rotation_strategy = Rotation_strategy.RANDOM_180;
+	break;
+      case 2:
+	tile_strategy = Tile_strategy.RANDOM;
+	rotation_strategy = Rotation_strategy.ALTERNATING_90;
+	break;
+      case 3:
+	pattern = Pattern.BRICK;
+	tile_strategy = Tile_strategy.RANDOM;
+	break;
+      case 4:
+	pattern = Pattern.ASHLAR;
+	tile_strategy = Tile_strategy.RANDOM;
+	break;
+    }
+  }
+
   void randomize()
   {
     random_seed = millis() + int(random(Integer.MAX_VALUE));
@@ -136,7 +191,7 @@ class Config {
     pattern = Pattern.values()[int(random(Pattern.NUM_PATTERN.ordinal()))];
     tile_strategy = Tile_strategy.values()[int(random(Tile_strategy.NUM_TILE_STRATEGY.ordinal()))];
     rotation_strategy = Rotation_strategy.values()[int(random(Rotation_strategy.NUM_ROTATION_STRATEGY.ordinal()))];
-    rotation_glitch = int(random(100));
+    rotation_glitch = int(random(2)) == 0 ? 0 : int(random(100));
     pattern_offset_ratio = int(random(3)) + 1;
   }
 
@@ -305,6 +360,8 @@ void keyPressed()
     case 'q':
       exit();
       break;
+    case 'S':
+      do_save = true;
     case 'u':
       // Move config back in the undo stack.
       if (current_config > 0) {
@@ -359,6 +416,10 @@ void keyPressed()
       break;
     case 'b':
       config.basic();
+      break;
+    case 'f':
+      favourite = (favourite + 1) % config.MAX_FAVOURITES;
+      config.favourite(favourite);
       break;
     case 'g':
       config.adjust_glitch(1);
@@ -527,6 +588,9 @@ void render() {
 	}
       }
 
+      // Always calculate random value to have the same number of random()
+      // calls for each mode.
+      int tile_random = int(random(tile_count));
       switch (config.tile_strategy) {
         case FIXED_TILE_0:
           tile_num = 0;
@@ -550,10 +614,13 @@ void render() {
           tile_num = (x + per_row_random[y]) % tile_count;
           break;
         case RANDOM:
-          tile_num = int(random(tile_count));
+          tile_num = tile_random;
           break;
       }
       
+      // Always calculate random value to have the same number of random()
+      // calls for each mode.
+      int rotation_random = int(random(4));
       switch (config.rotation_strategy) {
         case FIXED_0:
           rot = 0;
@@ -570,12 +637,13 @@ void render() {
 	  rot = (x + y) % 4 * 90;
 	  break;
         case RANDOM:
-          rot = int(random(4)) * 90;
+          rot = rotation_random * 90;
           break;
         case RANDOM_180:
-          rot = int(random(2)) * 180;
+          rot = (rotation_random % 2) * 180;
           break;
       }
+
       // Calculate random_rot first so that the same number of random() calls
       // happen which will result in additional tiles being made glitched.
       int random_rot = 90 + int(random(2)) * 180;
@@ -598,6 +666,12 @@ void render() {
       image(tile, 0, 0);
       popMatrix();
     }
+  }
+
+  if (do_save) {
+    save(String.format("saved-%02d%02d%02d-%02d%02d%02d.jpg",
+		       year(), month(), day(), hour(), minute(), second()));
+    do_save = false;
   }
   
   // status("old_configs: " + old_configs.size());
@@ -642,6 +716,7 @@ void render() {
     status("  q     quit");
     status("  rR    adjust rotation strategy");
     status("  s     new random seed");
+    status("  S     save image");
     status("  tT    adjust tile strategy");
     status("  u     undo last config change");
     status("  U     redo last config change");
