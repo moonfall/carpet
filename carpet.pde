@@ -1,10 +1,21 @@
+// Carpet tiling explorer
+// David Riley <driley@moonfall.com>
+
+// Tile data.
 PImage[] all_tiles;
 PImage[] tiles;
-boolean[] tile_enabled;
 int tile_width = 200;
 int tile_height = 200;
 int tile_cols = 13;
 int tile_rows = 12;
+
+// UI/Display state.
+boolean need_update = true;
+PFont font;
+char last_key = ' ';
+boolean show_tiles = false;
+boolean show_help = false;
+int status_line;
 
 String[] files = {
   "formwork_cornice_I0518_00175_MAIN.jpg",
@@ -17,41 +28,6 @@ String[] files = {
   "transverse_mortar_I0520_00700_MAIN.jpg",
   "transverse_rebar_I0520_00500_MAIN.jpg",
 };
-
-int random_seed = 0;
-Pattern pattern = Pattern.MONOLITHIC;
-Tile_strategy tile_strategy = Tile_strategy.RANDOM;
-Rotation_strategy rotation_strategy = Rotation_strategy.RANDOM_180;
-int rotation_glitch = 0;
-int pattern_offset_ratio = 2;
-boolean show_tiles = false;
-boolean show_help = false;
-PFont font;
-
-int status_line;
-
-PImage prepImage(String filename)
-{
-  PImage orig = loadImage(filename);
-  PImage tile = createImage(tile_width, tile_height, RGB);
-  tile.copy(orig, 0, 0, 1700, 1700, 0, 0, tile_width, tile_height);
-  return tile;
-}
-
-void setup() {
-  size(2600, 2400);
-  all_tiles = new PImage[files.length];
-  tiles = new PImage[files.length];
-  tile_enabled = new boolean[files.length];
-  for (int i = 0; i < files.length; ++i) {
-    all_tiles[i] = prepImage(files[i]);
-    tile_enabled[i] = true;
-  }
-  font = createFont("Monaco", 12);
-  if (font != null) {
-    textFont(font);
-  }
-}
 
 enum Pattern
 {
@@ -86,16 +62,195 @@ enum Rotation_strategy {
   NUM_ROTATION_STRATEGY,
 };
 
-void toggle_tile(int index)
-{
-  if (index < tile_enabled.length) {
-    tile_enabled[index] = !tile_enabled[index];
+class Config {
+  int random_seed;
+  boolean[] tile_enabled;
+  Pattern pattern;
+  Tile_strategy tile_strategy;
+  Rotation_strategy rotation_strategy;
+  int rotation_glitch;
+  int pattern_offset_ratio;
+
+  Config() {
+    initial();
   }
+
+  void initial() {
+    random_seed = 0;
+    tile_enabled = new boolean[9];
+    for (int i = 0; i < tile_enabled.length; ++i) {
+      tile_enabled[i] = true;
+    }
+    pattern = Pattern.MONOLITHIC;
+    tile_strategy = Tile_strategy.RANDOM;
+    rotation_strategy = Rotation_strategy.RANDOM_180;
+    rotation_glitch = 0;
+    pattern_offset_ratio = 2;
+  }
+
+  void basic()
+  {
+    random_seed = 0;
+    for (int i = 0; i < tile_enabled.length; ++i) {
+      tile_enabled[i] = i < 3;
+    }
+    pattern = Pattern.MONOLITHIC;
+    tile_strategy = Tile_strategy.SEQUENTIAL_ROW;
+    rotation_strategy = Rotation_strategy.FIXED_0;
+    rotation_glitch = 0;
+    pattern_offset_ratio = 2;
+  }
+
+  void randomize()
+  {
+    random_seed = millis() + int(random(Integer.MAX_VALUE));
+    randomSeed(random_seed);
+    pattern = Pattern.values()[int(random(Pattern.NUM_PATTERN.ordinal()))];
+    tile_strategy = Tile_strategy.values()[int(random(Tile_strategy.NUM_TILE_STRATEGY.ordinal()))];
+    rotation_strategy = Rotation_strategy.values()[int(random(Rotation_strategy.NUM_ROTATION_STRATEGY.ordinal()))];
+    rotation_glitch = int(random(100));
+    pattern_offset_ratio = int(random(3)) + 1;
+  }
+
+  void randomize_tiles()
+  {
+    for (int i = 0; i < tile_enabled.length; ++i) {
+      tile_enabled[i] = int(random(2)) == 0;
+    }
+  }
+
+  Config copy() {
+    Config rhs = new Config();
+    rhs.random_seed = random_seed;
+    rhs.tile_enabled = new boolean[9];
+    for (int i = 0; i < tile_enabled.length; ++i) {
+      rhs.tile_enabled[i] = tile_enabled[i];
+    }
+    rhs.pattern = pattern;
+    rhs.tile_strategy = tile_strategy;
+    rhs.rotation_strategy = rotation_strategy;
+    rhs.rotation_glitch = rotation_glitch;
+    rhs.pattern_offset_ratio = pattern_offset_ratio;
+    return rhs;
+  }
+
+  void reseed(int seed) {
+    random_seed = seed;
+  }
+
+  void toggle_tile(int index)
+  {
+    if (index < tile_enabled.length) {
+      tile_enabled[index] = !tile_enabled[index];
+    }
+  }
+
+  void adjust_pattern(int delta)
+  {
+    pattern = Pattern.values()[(pattern.ordinal() + delta + Pattern.NUM_PATTERN.ordinal()) % Pattern.NUM_PATTERN.ordinal()];
+  }
+
+  void adjust_rotation_strategy(int delta)
+  {
+    rotation_strategy = Rotation_strategy.values()[(rotation_strategy.ordinal() + delta + Rotation_strategy.NUM_ROTATION_STRATEGY.ordinal()) % Rotation_strategy.NUM_ROTATION_STRATEGY.ordinal()];
+  }
+
+  void adjust_tile_strategy(int delta)
+  {
+    tile_strategy = Tile_strategy.values()[(tile_strategy.ordinal() + delta + Tile_strategy.NUM_TILE_STRATEGY.ordinal()) % Tile_strategy.NUM_TILE_STRATEGY.ordinal()];
+  }
+
+  void adjust_glitch(int delta)
+  {
+    rotation_glitch += delta;
+    if (config.rotation_glitch < 0) {
+      config.rotation_glitch = 0;
+    } else if (config.rotation_glitch > 100) {
+      config.rotation_glitch = 100;
+    }
+  }
+
+  void adjust_offset_ratio(int delta) {
+    pattern_offset_ratio += delta;
+    if (pattern_offset_ratio < 1) {
+      pattern_offset_ratio = 1;
+    }
+  }
+};
+
+Config config = new Config();
+Config saved_config = new Config();
+ArrayList<Config> old_configs = new ArrayList<Config>();
+int current_config = 0;
+
+PImage prepImage(String filename)
+{
+  PImage orig = loadImage(filename);
+  PImage tile = createImage(tile_width, tile_height, RGB);
+  tile.copy(orig, 0, 0, 1700, 1700, 0, 0, tile_width, tile_height);
+  return tile;
+}
+
+void setup() {
+  size(2600, 2400);
+  all_tiles = new PImage[files.length];
+  tiles = new PImage[files.length];
+  for (int i = 0; i < files.length; ++i) {
+    all_tiles[i] = prepImage(files[i]);
+  }
+
+  font = createFont("Monaco", 12);
+  if (font != null) {
+    textFont(font);
+  }
+
+  old_configs.add(config.copy());
 }
 
 void keyPressed()
 {
-  switch(key) {
+  need_update = true;
+
+  char input = key;
+  if (key == '.') {
+    input = last_key;
+  } else {
+    last_key = key;
+  }
+
+  // Handle input which doesn't modify config and returns before saving
+  // the current state.
+  switch(input) {
+    case 'h':
+      show_help = !show_help;
+      return;
+    case 'q':
+      exit();
+      break;
+    case 'u':
+      // Move config back in the undo stack.
+      if (current_config > 0) {
+	current_config -= 1;
+	config = old_configs.get(current_config).copy();
+      }
+      return;
+    case 18: // CTRL-R
+    case 'U':
+      if (current_config + 1 < old_configs.size()) {
+	current_config += 1;
+	config = old_configs.get(current_config).copy();
+      }
+      return;
+    case '*':
+      saved_config = config.copy();
+      status("saved_config seed(): " + saved_config.random_seed);
+      return;
+    case '?':
+      show_tiles = !show_tiles;
+      return;
+  }
+
+  switch(input) {
     case '1':
     case '2':
     case '3':
@@ -105,123 +260,114 @@ void keyPressed()
     case '7':
     case '8':
     case '9':
-      toggle_tile(key - '1');
+      config.toggle_tile(input - '1');
       break;
     case 'A':
     case 'B':
     case 'C':
-      toggle_tile((key - 'A') * 3);
-      toggle_tile((key - 'A') * 3 + 1);
-      toggle_tile((key - 'A') * 3 + 2);
+      config.toggle_tile((input - 'A') * 3);
+      config.toggle_tile((input - 'A') * 3 + 1);
+      config.toggle_tile((input - 'A') * 3 + 2);
       break;
     case 'D':
     case 'E':
     case 'F':
-      toggle_tile((key - 'D'));
-      toggle_tile((key - 'D') + 3);
-      toggle_tile((key - 'D') + 6);
+      config.toggle_tile((input - 'D'));
+      config.toggle_tile((input - 'D') + 3);
+      config.toggle_tile((input - 'D') + 6);
       break;
     case 'b':
-      random_seed = 0;
-      pattern = Pattern.MONOLITHIC;
-      tile_strategy = Tile_strategy.SEQUENTIAL_ROW;
-      rotation_strategy = Rotation_strategy.FIXED_0;
-      rotation_glitch = 0;
-      pattern_offset_ratio = 2;
-      for (int i = 0; i < tile_enabled.length; ++i) {
-        tile_enabled[i] = i < 3;
-      }
+      config.basic();
       break;
     case 'g':
-      rotation_glitch += 1;
-      if (rotation_glitch > 100) {
-        rotation_glitch = 100;
-      }
+      config.adjust_glitch(1);
       break;
     case 'G':
-      rotation_glitch -= 1;
-      if (rotation_glitch < 0) {
-        rotation_glitch = 0;
-      }
+      config.adjust_glitch(-1);
       break;
     case '>':
-      rotation_glitch += 10;
-      if (rotation_glitch > 100) {
-        rotation_glitch = 100;
-      }
+      config.adjust_glitch(10);
       break;
     case '<':
-      rotation_glitch -= 10;
-      if (rotation_glitch < 0) {
-        rotation_glitch = 0;
-      }
+      config.adjust_glitch(-10);
       break;
-    case 'h':
-      show_help = !show_help;
+    case 'i':
+      config.basic();
       break;
     case 'o':
-      pattern_offset_ratio += 1;
+      config.adjust_offset_ratio(1);
       break;
     case 'O':
-      pattern_offset_ratio -= 1;
-      if (pattern_offset_ratio < 1) {
-        pattern_offset_ratio = 1;
-      }
+      config.adjust_offset_ratio(-1);
       break;
     case 'p':
-      next_pattern(1);
+      config.adjust_pattern(1);
       break;
     case 'P':
-      next_pattern(-1);
-      break;
-    case 'q':
-      exit();
+      config.adjust_pattern(-1);
       break;
     case 'r':
-      next_rotation_strategy(1);
+      config.adjust_rotation_strategy(1);
       break;
     case 'R':
-      next_rotation_strategy(-1);
+      config.adjust_rotation_strategy(-1);
       break;
     case 's':
-      random_seed = millis();
+      config.reseed(millis());
       break;
     case 't':
-      next_tile_strategy(1);
+      config.adjust_tile_strategy(1);
       break;
     case 'T':
-      next_tile_strategy(-1);
+      config.adjust_tile_strategy(-1);
       break;
-    case '?':
-      show_tiles = !show_tiles;
+    case 'x':
+      config.randomize();
       break;
+    case 'X':
+      config.randomize();
+      config.randomize_tiles();
+      break;
+    case '!':
+      config = saved_config.copy();
+      break;
+    case '^':
+      Config temp = saved_config;
+      saved_config = config;
+      config = temp;
+      break;
+    default:
+      // Ignore unknown key input.
+      return;
   }
-} 
 
-void next_pattern(int inc)
-{
-  pattern = Pattern.values()[(pattern.ordinal() + inc + Pattern.NUM_PATTERN.ordinal()) % Pattern.NUM_PATTERN.ordinal()];
+  // Remove anything forward from the current undo point.
+  old_configs.subList(current_config + 1, old_configs.size()).clear();
+
+  // Add the new config.
+  old_configs.add(config.copy());
+  current_config = old_configs.size() - 1;
 }
 
-void next_rotation_strategy(int inc)
+void status(String s)
 {
-  rotation_strategy = Rotation_strategy.values()[(rotation_strategy.ordinal() + inc + Rotation_strategy.NUM_ROTATION_STRATEGY.ordinal()) % Rotation_strategy.NUM_ROTATION_STRATEGY.ordinal()];
+  ++status_line;
+  text(s, 20, status_line * 20);
 }
 
-void next_tile_strategy(int inc)
-{
-  tile_strategy = Tile_strategy.values()[(tile_strategy.ordinal() + inc + Tile_strategy.NUM_TILE_STRATEGY.ordinal()) % Tile_strategy.NUM_TILE_STRATEGY.ordinal()];
-}
+void render() {
+  if (!need_update) {
+    return;
+  }
+  need_update = false;
 
-void draw() {
-  //image(img[0], 0, 0, img[0].width, img[0].height);
-  //image(img[1], 300, 300, img[1].width, img[1].width);
-  randomSeed(random_seed);
+  randomSeed(config.random_seed);
+  status_line = 0;
 
   // Count how many tiles are enabled.
   int tile_count = 0;
-  for (int i = 0; i < tile_enabled.length; ++i) {
-    if (tile_enabled[i] && i < all_tiles.length) {
+  for (int i = 0; i < config.tile_enabled.length; ++i) {
+    if (config.tile_enabled[i] && i < all_tiles.length) {
       tiles[tile_count] = all_tiles[i];
       ++tile_count;
     }
@@ -249,8 +395,8 @@ void draw() {
       int tile_y = y * tile_height;
       int tile_num = 0;
       float rot = 0;
-      int pattern_offset = tile_width / pattern_offset_ratio;
-      switch (pattern) {
+      int pattern_offset = tile_width / config.pattern_offset_ratio;
+      switch (config.pattern) {
         case MONOLITHIC:
 	default:
 	  tile_x = x * tile_width;
@@ -267,7 +413,7 @@ void draw() {
 	  tile_y = y * tile_height - x * pattern_offset;
 	  break;
       }
-      switch (tile_strategy) {
+      switch (config.tile_strategy) {
         case FIXED_TILE_0:
           tile_num = 0;
           break;
@@ -294,7 +440,7 @@ void draw() {
           break;
       }
       
-      switch (rotation_strategy) {
+      switch (config.rotation_strategy) {
         case FIXED_0:
           rot = 0;
           break;
@@ -316,10 +462,10 @@ void draw() {
           rot = int(random(2)) * 180;
           break;
       }
-      // Calculate random_rot first so that the same number of random() calls happen which
-      // will result in additional tiles being made glitched.
+      // Calculate random_rot first so that the same number of random() calls
+      // happen which will result in additional tiles being made glitched.
       int random_rot = 90 + int(random(2)) * 180;
-      if (int(random(100)) < rotation_glitch) {
+      if (int(random(100)) < config.rotation_glitch) {
         rot += random_rot;
       }
       PImage tile = tiles[tile_num];
@@ -333,25 +479,30 @@ void draw() {
     }
   }
   
-  status_line = 0;
-  status("seed: " + random_seed);
+  // status("old_configs: " + old_configs.size());
+  // for (int i = 0; i < old_configs.size(); ++i) {
+  //   status("  seed: " + old_configs.get(i).random_seed +
+  //	   (current_config == i ? "*" : ""));
+  // }
+  status("seed: " + config.random_seed);
   String s = "tiles: ";
-  for (int i = 0; i < tile_enabled.length; ++i) {
-    s += tile_enabled[i] ? i + 1 : "_";
+  for (int i = 0; i < config.tile_enabled.length; ++i) {
+    s += config.tile_enabled[i] ? i + 1 : "_";
   }
   status(s);
   if (show_tiles) {
-    for (int i = 0; i < tile_enabled.length; ++i) {
-      if (tile_enabled[i]) {
+    for (int i = 0; i < config.tile_enabled.length; ++i) {
+      if (config.tile_enabled[i]) {
 	status("  " + (i + 1) + ": " + files[i]);
       }
     }
   }
-  status("pattern: " + pattern.toString());
-  status("tile strategy: " + tile_strategy.toString());
-  status("rotation strategy: " + rotation_strategy.toString());
-  status("rotation glitch percent: " + rotation_glitch);
-  status("pattern offset ratio: " + pattern_offset_ratio);
+  status("pattern: " + config.pattern.toString());
+  status("tile strategy: " + config.tile_strategy.toString());
+  status("rotation strategy: " + config.rotation_strategy.toString());
+  status("rotation glitch percent: " + config.rotation_glitch);
+  status("pattern offset ratio: " + config.pattern_offset_ratio);
+  // status("key pressed: " + int(key));
   if (show_help) {
     status("");
     status("commands:");
@@ -361,12 +512,21 @@ void draw() {
     status("  b     basic configuration");
     status("  gG><  adjust rotation glitch percent");
     status("  h     show this message");
+    status("  i     initial configuration");
     status("  oO    adjust pattern offset ratio");
     status("  pP    adjust pattern");
     status("  q     quit");
     status("  rR    adjust rotation strategy");
     status("  s     new random seed");
     status("  tT    adjust tile strategy");
+    status("  u     undo last config change");
+    status("  U     redo last config change");
+    status("  x     randomize layout");
+    status("  X     randomize layout and tile selection");
+    status("  *     save config");
+    status("  !     load saved config");
+    status("  ^     swap with saved config");
+    status("  .     repeat last command");
     status("  ?     show tile names");
 
     // String[] fontList = PFont.list();
@@ -374,11 +534,10 @@ void draw() {
     //   status(i);
     // }
   }
-  delay(20);
 }
 
-void status(String s)
+void draw()
 {
-  ++status_line;
-  text(s, 20, status_line * 20);
+  render();
+  delay(5);
 }
