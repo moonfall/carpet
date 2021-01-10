@@ -11,6 +11,8 @@ int tile_rows = 12;
 
 // UI/Display state.
 boolean need_update = true;
+boolean mouse_processed = false;
+boolean shift_pressed = false;
 PFont font;
 char last_key = ' ';
 boolean show_tiles = false;
@@ -62,6 +64,30 @@ enum Rotation_strategy {
   NUM_ROTATION_STRATEGY,
 };
 
+class Modification
+{
+  int x;
+  int y;
+  int rotation;
+  int tile;
+
+  Modification(int x_, int y_)
+  {
+    x = x_;
+    y = y_;
+    rotation = 0;
+    tile = 0;
+  }
+
+  Modification copy()
+  {
+    Modification rhs = new Modification(x, y);
+    rhs.rotation = rotation;
+    rhs.tile = tile;
+    return rhs;
+  }
+};
+
 class Config {
   int random_seed;
   boolean[] tile_enabled;
@@ -70,6 +96,7 @@ class Config {
   Rotation_strategy rotation_strategy;
   int rotation_glitch;
   int pattern_offset_ratio;
+  ArrayList<Modification> mods;
 
   Config() {
     initial();
@@ -86,6 +113,7 @@ class Config {
     rotation_strategy = Rotation_strategy.RANDOM_180;
     rotation_glitch = 0;
     pattern_offset_ratio = 2;
+    mods = new ArrayList<Modification>();
   }
 
   void basic()
@@ -131,6 +159,9 @@ class Config {
     rhs.rotation_strategy = rotation_strategy;
     rhs.rotation_glitch = rotation_glitch;
     rhs.pattern_offset_ratio = pattern_offset_ratio;
+    for (Modification mod: mods) {
+      rhs.mods.add(mod.copy());
+    }
     return rhs;
   }
 
@@ -176,7 +207,50 @@ class Config {
       pattern_offset_ratio = 1;
     }
   }
+
+  void clear_modifications()
+  {
+    mods.clear();
+  }
+
+  void remove_modification(int x, int y)
+  {
+    for (int i = 0; i < mods.size(); ++i) {
+      Modification mod = mods.get(i);
+      if (mod.x == x && mod.y == y) {
+	mods.remove(i);
+	return;
+      }
+    }
+  }
+
+  Modification get_modification(int x, int y, boolean add)
+  {
+    for (Modification mod: mods) {
+      if (mod.x == x && mod.y == y) {
+	return mod;
+      }
+    }
+
+    if (add) {
+      Modification mod = new Modification(x, y);
+      mods.add(mod);
+      return mod;
+    } else {
+      return null;
+    }
+  }
 };
+
+void push_config()
+{
+  // Remove anything forward from the current undo point.
+  old_configs.subList(current_config + 1, old_configs.size()).clear();
+
+  // Add the new config.
+  old_configs.add(config.copy());
+  current_config = old_configs.size() - 1;
+}
 
 Config config = new Config();
 Config saved_config = new Config();
@@ -214,13 +288,17 @@ void keyPressed()
   char input = key;
   if (key == '.') {
     input = last_key;
-  } else {
+  } else if (key == CODED) {
+    if (keyCode == SHIFT) {
+      shift_pressed = true;
+    }
+  } else if (key != CODED) {
     last_key = key;
   }
 
   // Handle input which doesn't modify config and returns before saving
   // the current state.
-  switch(input) {
+  switch (input) {
     case 'h':
       show_help = !show_help;
       return;
@@ -250,7 +328,10 @@ void keyPressed()
       return;
   }
 
-  switch(input) {
+  // Clear modifications in most cases.
+  boolean clear_mods = true;
+
+  switch (input) {
     case '1':
     case '2':
     case '3':
@@ -294,6 +375,9 @@ void keyPressed()
     case 'i':
       config.basic();
       break;
+    case 'm':
+      config.clear_modifications();
+      break;
     case 'o':
       config.adjust_offset_ratio(1);
       break;
@@ -330,23 +414,33 @@ void keyPressed()
       break;
     case '!':
       config = saved_config.copy();
+      clear_mods = false;
       break;
     case '^':
       Config temp = saved_config;
       saved_config = config;
       config = temp;
+      clear_mods = false;
       break;
     default:
       // Ignore unknown key input.
       return;
   }
 
-  // Remove anything forward from the current undo point.
-  old_configs.subList(current_config + 1, old_configs.size()).clear();
+  if (clear_mods) {
+    config.clear_modifications();
+  }
 
-  // Add the new config.
-  old_configs.add(config.copy());
-  current_config = old_configs.size() - 1;
+  push_config();
+}
+
+void keyReleased()
+{
+  if (key == CODED) {
+    if (keyCode == SHIFT) {
+      shift_pressed = false;
+    }
+  }
 }
 
 void status(String s)
@@ -388,7 +482,7 @@ void render() {
   for (int i = 0; i < tile_rows * 2; ++i) {
     per_row_random[i] = int(random(tile_count));
   }
-  
+
   for (int y = 0; y < tile_rows * 2; ++y) {
     for (int x = 0; x < tile_cols * 2; ++x) {
       int tile_x = x * tile_width;
@@ -413,6 +507,26 @@ void render() {
 	  tile_y = y * tile_height - x * pattern_offset;
 	  break;
       }
+
+      // All modifications to tile_x and tile_y should be performed by now.
+      if (mousePressed && !mouse_processed) {
+	if (mouseX >= tile_x && mouseX < tile_x + tile_width &&
+	    mouseY >= tile_y && mouseY < tile_y + tile_height) {
+	  if (mouseButton == LEFT) {
+	    Modification mod = config.get_modification(x, y, true);
+	    mod.rotation += shift_pressed ? -90 : 90;
+	    push_config();
+	  } else if (mouseButton == CENTER) {
+	    config.remove_modification(x, y);
+	    push_config();
+	  } else if (mouseButton == RIGHT) {
+	    Modification mod = config.get_modification(x, y, true);
+	    mod.tile += shift_pressed ? -1 : 1;
+	    push_config();
+	  }
+	}
+      }
+
       switch (config.tile_strategy) {
         case FIXED_TILE_0:
           tile_num = 0;
@@ -468,6 +582,13 @@ void render() {
       if (int(random(100)) < config.rotation_glitch) {
         rot += random_rot;
       }
+
+      Modification mod = config.get_modification(x, y, false);
+      if (mod != null) {
+	rot += mod.rotation;
+	tile_num = (tile_num + mod.tile) % tile_count;
+      }
+
       PImage tile = tiles[tile_num];
       pushMatrix();
       translate(tile_x, tile_y);
@@ -481,8 +602,9 @@ void render() {
   
   // status("old_configs: " + old_configs.size());
   // for (int i = 0; i < old_configs.size(); ++i) {
-  //   status("  seed: " + old_configs.get(i).random_seed +
-  //	   (current_config == i ? "*" : ""));
+  //   Config old = old_configs.get(i);
+  //   status("  seed: " + old.random_seed + "; mods: " + old.mods.size() +
+  //          (current_config == i ? "*" : ""));
   // }
   status("seed: " + config.random_seed);
   String s = "tiles: ";
@@ -502,6 +624,7 @@ void render() {
   status("rotation strategy: " + config.rotation_strategy.toString());
   status("rotation glitch percent: " + config.rotation_glitch);
   status("pattern offset ratio: " + config.pattern_offset_ratio);
+  status("modifications: " + config.mods.size());
   // status("key pressed: " + int(key));
   if (show_help) {
     status("");
@@ -513,6 +636,7 @@ void render() {
     status("  gG><  adjust rotation glitch percent");
     status("  h     show this message");
     status("  i     initial configuration");
+    status("  m     clear modifications");
     status("  oO    adjust pattern offset ratio");
     status("  pP    adjust pattern");
     status("  q     quit");
@@ -534,10 +658,21 @@ void render() {
     //   status(i);
     // }
   }
+
+  if (mousePressed) {
+    // Avoid repeated mouse updated.
+    mouse_processed = true;
+  }
 }
 
 void draw()
 {
+  if (mousePressed) {
+    need_update = true;
+  } else if (mouse_processed) {
+    mouse_processed = false;
+    need_update = true;
+  }
   render();
   delay(5);
 }
