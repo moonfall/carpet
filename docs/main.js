@@ -276,10 +276,10 @@ function render()
           tile_num = 2;
           break;
         case Tile_strategy.SEQUENTIAL_ROW:
-          tile_num = y % tile_count;
+          tile_num = x % tile_count;
           break;
         case Tile_strategy.SEQUENTIAL_COL:
-          tile_num = x % tile_count;
+          tile_num = y % tile_count;
           break;
         case Tile_strategy.SEQUENTIAL_ROW_COL:
           tile_num = (x + y) % tile_count;
