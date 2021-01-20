@@ -252,12 +252,12 @@ function render()
           tile_x = x * tile_width;
           tile_y = y * tile_height;
           break;
-        case Pattern.ASHLAR:
+        case Pattern.BRICK:
           // Offset is in reverse to ensure valid data for the entire row.
           tile_x = x * tile_width - y * pattern_offset;
           tile_y = y * tile_height;
           break;
-        case Pattern.BRICK:
+        case Pattern.ASHLAR:
           // Offset is in reverse to ensure valid data for the entire col.
           tile_x = x * tile_width;
           tile_y = y * tile_height - x * pattern_offset;
