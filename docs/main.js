@@ -48,6 +48,7 @@ randomSeed(0);
 
 function Config()
 {
+  this.enabled = [];
   this.random_seed = 0;
   this.pattern = Pattern.MONOLITHIC;
   this.tile_strategy = Tile_strategy.FIXED_TILE_0;
@@ -69,6 +70,51 @@ function Config()
 }
 
 var config = new Config();
+
+function getPath(filename) {
+  return "tiles/" + filename;
+}
+
+function addTileButton(name, path) {
+  var div_element = document.getElementById("tiles");
+
+  var element = document.createElement("img");
+  element.src = path
+  element.id = name;
+  element.width = 100;
+  element.height = 100;
+  element.className = "selected";
+  element.textContent = all_tiles[i];
+  element.onclick = function() {
+    config.enabled[this.id] = !config.enabled[this.id];
+    this.className = config.enabled[this.id] ? "selected" : "unselected";
+    need_update = true;
+  }
+  div_element.appendChild(element);
+}
+
+function Tile(name, path)
+{
+  this.name = name;
+  this.path = path;
+  var canvas = document.createElement("canvas");
+  this.canvas = canvas;
+  canvas.width = tile_width;
+  canvas.height = tile_height;
+
+  var img = new Image();
+  this.img = img;
+  img.alt = name;
+  img.src = path;
+  img.addEventListener('load', function() {
+    var img_ctx = canvas.getContext("2d");
+    img_ctx.drawImage(img, 0, 0, image_width, image_height, 0, 0,
+                      canvas.width, canvas.height);
+    need_update = true;
+  }, false);
+
+  return this;
+}
 
 function addButton(container, name, value) {
   var element = document.createElement("button");
@@ -106,8 +152,6 @@ function addButtons() {
 
 }
 
-addButtons();
-
 function xmur3(str) {
     for(var i = 0, h = 1779033703 ^ str.length; i < str.length; i++)
         h = Math.imul(h ^ str.charCodeAt(i), 3432918353),
@@ -133,7 +177,6 @@ const tile_width = 200;
 const tile_height = 200;
 
 console.log("hello");
-console.log(location.hash);
 
 var c = document.getElementById("canvas");
 var ctx = c.getContext("2d");
@@ -144,27 +187,18 @@ const tile_rows = (c.height / tile_height) + 1;
 var need_update = true;
 
 for (i = 0; i < files.length; ++i) {
-  all_tiles.push(prepImage("tiles/" + files[i]));
-  console.log("loaded " + i);
+  var name = files[i];
+  var path = getPath(files[i]);
+  all_tiles.push(new Tile(name, path));
+  config.enabled[name] = true;
+  addTileButton(name, path);
 }
 
-function prepImage(filename)
-{
-  var img_c = document.createElement("canvas");
-  img_c.width = tile_width;
-  img_c.height = tile_height;
-
-  var img = new Image();
-  img.src = filename;
-  img.addEventListener('load', function() {
-    var img_ctx = img_c.getContext("2d");
-    img_ctx.drawImage(img, 0, 0, image_width, image_height, 0, 0, img_c.width, img_c.height);
-    need_update = true;
-  }, false);
-
-  return img_c;
+for (i = 0; i < all_tiles.length; ++i) {
+  console.log("loaded " + all_tiles[i].name);
 }
 
+addButtons();
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -184,8 +218,19 @@ function render()
 
   randomSeed(config.random_seed);
 
-  tiles = all_tiles.slice();
-  tile_count = tiles.length;
+  var tiles = [];
+  var tile_count = 0;
+  for (i = 0; i < all_tiles.length; ++i) {
+    var file = all_tiles[i].name;
+    if (config.enabled[file]) {
+      tiles[tile_count] = all_tiles[i].canvas;
+      ++tile_count;
+    }
+  }
+  if (tile_count == 0) {
+    tiles[0] = all_tiles[0].canvas;
+    tile_count = 1;
+  }
 
   var per_row_random = [];
   for (i = 0; i < tile_rows * 2; ++i) {
@@ -231,10 +276,10 @@ function render()
           tile_num = 2;
           break;
         case Tile_strategy.SEQUENTIAL_ROW:
-          tile_num = x % tile_count;
+          tile_num = y % tile_count;
           break;
         case Tile_strategy.SEQUENTIAL_COL:
-          tile_num = y % tile_count;
+          tile_num = x % tile_count;
           break;
         case Tile_strategy.SEQUENTIAL_ROW_COL:
           tile_num = (x + y) % tile_count;
@@ -290,15 +335,6 @@ function render()
       ctx.restore();
     }
   }
-
-  /*
-  ctx.drawImage(img, 0, 0);
-  ctx.drawImage(img, 200, 200);
-  ctx.drawImage(img, 400, 400);
-  for (i = 0; i < tiles.length; ++i) {
-    ctx.drawImage(tiles[i], 0, i * tile_width);
-  }
-  */
 }
 
 async function main() {

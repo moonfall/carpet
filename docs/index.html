@@ -1,12 +1,31 @@
+<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
     <title>carpet tiling explorer</title>
+    <style>
+      .block {
+        display: inline-block;
+      }
+      .selected {
+        border-width: 5px;
+        border-style: solid;
+        border-color: black;
+      }
+      .unselected {
+        border-width: 5px;
+        border-style: solid;
+        border-color: white;
+      }
+    </style>
+
   </head>
   <body>
     <div>
       i wish i was a sandbox, filled with lots of sand.
     </div>
+
+    <div id="tiles" class="block"></div>
     <div id="pattern"></div>
     <div id="tile_strategy"></div>
     <div id="rotation_strategy"></div>
