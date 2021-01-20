@@ -21,6 +21,7 @@ boolean show_tiles = false;
 boolean show_help = false;
 int status_line;
 
+String base_dir = "docs/tiles";
 String[] files = {
   "formwork_cornice_I0518_00175_MAIN.jpg",
   "formwork_mortar_I0518_00700_MAIN.jpg",
@@ -99,7 +100,7 @@ class Config {
   int rotation_glitch;
   int pattern_offset_ratio;
   ArrayList<Modification> mods;
-  int MAX_FAVOURITES = 10;
+  int MAX_FAVOURITES = 18;
 
   Config() {
     initial();
@@ -144,11 +145,12 @@ class Config {
     // pattern
     // - brick/ashlar make random look less jarring
     // tile strategy
-    // - RANDOM almost always is favourite
-    // - SEQUENTIAL_ROW/SEQUENTIAL_COL only look good with a single 
+    // - RANDOM almost always is favourite 
+    // - SEQUENTIAL_ROW/SEQUENTIAL_COL only look good with a single
     //   tile with ALTERNATING_90 or ROTATING_90 (maybe RANDOM or RANDOM_90)
     // - SEQUENTIAL_ROW_COL 
     //   - MONOLITHIC && tile_enabled.length == 1
+    //   - BRICK/ASHLAR look okay due to rebar being lighter colour
 
     // Switch between tilesets.
     if (preset % 2 == 1) {
@@ -180,6 +182,24 @@ class Config {
       case 4:
 	pattern = Pattern.ASHLAR;
 	tile_strategy = Tile_strategy.RANDOM;
+	break;
+      case 5:
+	pattern = Pattern.BRICK;
+	tile_strategy = Tile_strategy.SEQUENTIAL_ROW_COL;
+	break;
+      case 6:
+	pattern = Pattern.ASHLAR;
+	tile_strategy = Tile_strategy.SEQUENTIAL_ROW_COL;
+	break;
+      case 7:
+	pattern = Pattern.BRICK;
+	tile_strategy = Tile_strategy.SEQUENTIAL_ROW_COL;
+	rotation_strategy = Rotation_strategy.ALTERNATING_90;
+	break;
+      case 8:
+	pattern = Pattern.ASHLAR;
+	tile_strategy = Tile_strategy.SEQUENTIAL_ROW_COL;
+	rotation_strategy = Rotation_strategy.ALTERNATING_90;
 	break;
     }
   }
@@ -314,7 +334,7 @@ int current_config = 0;
 
 PImage prepImage(String filename)
 {
-  PImage orig = loadImage(filename);
+  PImage orig = loadImage(base_dir + "/" + filename);
   PImage tile = createImage(tile_width, tile_height, RGB);
   tile.copy(orig, 0, 0, 1700, 1700, 0, 0, tile_width, tile_height);
   return tile;
@@ -420,6 +440,7 @@ void keyPressed()
     case 'f':
       favourite = (favourite + 1) % config.MAX_FAVOURITES;
       config.favourite(favourite);
+      println("favourite: " + favourite);
       break;
     case 'g':
       config.adjust_glitch(1);
@@ -654,7 +675,11 @@ void render() {
       Modification mod = config.get_modification(x, y, false);
       if (mod != null) {
 	rot += mod.rotation;
-	tile_num = (tile_num + mod.tile) % tile_count;
+	tile_num = tile_num + mod.tile;
+	while (tile_num < 0) {
+	  tile_num += tile_count;
+	}
+	tile_num %= tile_count;
       }
 
       PImage tile = tiles[tile_num];
@@ -669,8 +694,10 @@ void render() {
   }
 
   if (do_save) {
-    save(String.format("saved-%02d%02d%02d-%02d%02d%02d.jpg",
-		       year(), month(), day(), hour(), minute(), second()));
+    String name = String.format("saved-%02d%02d%02d-%02d%02d%02d.jpg",
+			        year(), month(), day(), hour(), minute(),
+				second());
+    save(name);
     do_save = false;
   }
   
