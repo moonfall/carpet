@@ -1,14 +1,16 @@
 var files = [
-  "formwork_cornice_I0518_00175_MAIN.jpg",
-  "formwork_mortar_I0518_00700_MAIN.jpg",
-  "formwork_rebar_I0518_00500_MAIN.jpg",
-  "scaffold_cornice_I0519_00175_MAIN.jpg",
-  "scaffold_mortar_I0519_00700_MAIN.jpg",
-  "scaffold_rebar_I0519_00500_MAIN.jpg",
-  "transverse_cornice_I0520_00175_MAIN.jpg",
-  "transverse_mortar_I0520_00700_MAIN.jpg",
-  "transverse_rebar_I0520_00500_MAIN.jpg",
+  ["formwork", "formwork_cornice_I0518_00175_MAIN.jpg"],
+  ["formwork", "formwork_mortar_I0518_00700_MAIN.jpg"],
+  ["formwork", "formwork_rebar_I0518_00500_MAIN.jpg"],
+  ["scaffold", "scaffold_cornice_I0519_00175_MAIN.jpg"],
+  ["scaffold", "scaffold_mortar_I0519_00700_MAIN.jpg"],
+  ["scaffold", "scaffold_rebar_I0519_00500_MAIN.jpg"],
+  ["transverse", "transverse_cornice_I0520_00175_MAIN.jpg"],
+  ["transverse", "transverse_mortar_I0520_00700_MAIN.jpg"],
+  ["transverse", "transverse_rebar_I0520_00500_MAIN.jpg"],
 ];
+
+var groups = [];
 
 var Pattern = {
   MONOLITHIC: 0,
@@ -54,7 +56,7 @@ function Config()
   this.tile_strategy = Tile_strategy.FIXED_TILE_0;
   this.rotation_strategy = Rotation_strategy.FIXED_0;
   this.pattern_offset_ratio = 2;
-  this.rotation_glitch = 5;
+  this.rotation_glitch = 0;
 
   this.adjust_pattern = function (delta) {
     this.pattern = (this.pattern + delta + Pattern.COUNT) % Pattern.COUNT;
@@ -75,8 +77,39 @@ function getPath(filename) {
   return "tiles/" + filename;
 }
 
-function addTileButton(name, path) {
-  var div_element = document.getElementById("tiles");
+function addTileButton(group, name, path) {
+  var div_element = document.getElementById(group);
+  if (!div_element) {
+    var tiles_element = document.getElementById("tiles");
+
+    parent_element = document.createElement("div");
+    parent_element.className = "block";
+
+    text_element = document.createElement("button");
+    text_element.textContent = group;
+    text_element.style.textAlign = "center";
+    text_element.style.width = "100%";
+    text_element.onclick = function() {
+      for (var i = 0; i < groups[group].length; ++i) {
+        var name = groups[group][i];
+        config.enabled[name] = !config.enabled[name];
+        this.className = config.enabled[this.id] ? "selected" : "unselected";
+        var tile = document.getElementById(name);
+        if (tile) {
+          tile.className = config.enabled[name] ? "selected" : "unselected";
+        }
+      }
+      need_update = true;
+    }
+
+    div_element = document.createElement("div");
+    div_element.id = group;
+
+    parent_element.appendChild(text_element);
+    parent_element.appendChild(div_element);
+
+    tiles_element.appendChild(parent_element);
+  }
 
   var element = document.createElement("img");
   element.src = path
@@ -223,11 +256,16 @@ const tile_rows = (c.height / tile_height) + 1;
 var need_update = true;
 
 for (i = 0; i < files.length; ++i) {
-  var name = files[i];
-  var path = getPath(files[i]);
+  var group = Array.isArray(files[i]) ? files[i][0] : "tiles";
+  var name = Array.isArray(files[i]) ? files[i][1] : files[i];
+  var path = getPath(name);
   all_tiles.push(new Tile(name, path));
   config.enabled[name] = true;
-  addTileButton(name, path);
+  addTileButton(group, name, path);
+  if (!Array.isArray(groups[group])) {
+    groups[group] = [];
+  }
+  groups[group].push(name);
 }
 
 for (i = 0; i < all_tiles.length; ++i) {
