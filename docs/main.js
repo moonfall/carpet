@@ -129,6 +129,39 @@ function addButton(container, name, value) {
   div_element.appendChild(element);
 }
 
+function addSlider(container, name, value, min_value, max_value) {
+  var value_element = document.createElement("span");
+  value_element.innerHTML = value;
+
+  var element = document.createElement("input");
+  element.type = "range";
+  element.value = value;
+  element.min = min_value;
+  element.max = max_value;
+  element.onclick = function() {
+    config[container] = parseInt(this.value);
+    value_element.innerHTML = this.value;
+    need_update = true;
+  }
+
+  var div_element = document.getElementById(container);
+  div_element.appendChild(element);
+  div_element.appendChild(value_element);
+}
+
+function addText(container, name, value) {
+  var element = document.createElement("input");
+  element.type = "number";
+  element.value = value;
+  element.onchange = function() {
+    config[container] = parseInt(this.value);
+    need_update = true;
+  }
+
+  var div_element = document.getElementById(container);
+  div_element.appendChild(element);
+}
+
 function addButtons() {
   addButton("pattern", "Monolithic", Pattern.MONOLITHIC);
   addButton("pattern", "Brick", Pattern.BRICK);
@@ -150,6 +183,9 @@ function addButtons() {
   addButton("rotation_strategy", "Random 180", Rotation_strategy.RANDOM_180);
   addButton("rotation_strategy", "Random", Rotation_strategy.RANDOM);
 
+  addSlider("rotation_glitch", "Rotation Glitch", 5, 0, 100);
+  addSlider("pattern_offset_ratio", "Rotation Glitch", 2, 1, 10);
+  addText("random_seed", "Random Seed", 0);
 }
 
 function xmur3(str) {
